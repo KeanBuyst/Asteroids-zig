@@ -39,6 +39,18 @@ const Object = struct {
         return math.vector2Normalize(rl.Vector2.init(x, -y));
     }
 
+    pub fn collison(self: @This(),point: rl.Vector2) bool {
+        const mat = math.matrixRotateZ(self.rotation);
+
+        var points: []rl.Vector2 = allocator.alloc(rl.Vector2,self.model.items.len) catch unreachable;
+        defer allocator.free(points);
+
+        for (0..self.model.items.len) |i| {
+            points[i] = math.vector2Add(math.vector2Transform(self.model.items[i],mat),self.pos);
+        }
+        return rl.checkCollisionPointPoly(point,points);
+    }
+
     pub fn destroy(self: @This()) void {
         self.model.deinit();
     }
@@ -211,6 +223,17 @@ fn update(game: *Game) anyerror!void {
         }
         proj.move();
     }
+    // collison
+    end: for (game.player.sprite.model.items) |rawPoint| {
+        const mat = math.matrixRotateZ(game.player.sprite.rotation);
+        const point = math.vector2Add(math.vector2Transform(rawPoint,mat),game.player.sprite.pos);
+        for (game.asteroids.items) |a| {
+            if(a.sprite.collison(point)){
+                // collison accoured! betweem player and asteroid
+                break: end;
+            }
+        }
+    }
 }
 fn draw(game: *Game) void {
     game.player.sprite.draw();
@@ -223,7 +246,6 @@ fn draw(game: *Game) void {
 }
 
 pub fn main() anyerror!void {
-
     rl.initWindow(screenWidth, screenHeight, "Asteroids");
     defer rl.closeWindow();
     rl.setTargetFPS(60);
