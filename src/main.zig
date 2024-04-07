@@ -16,11 +16,9 @@ const Object = struct {
 
     pub fn draw(self: @This()) void {
         const mat = math.matrixRotateZ(self.rotation);
-        for (self.model.items,0..) |_,i| {
-            var j: usize = i + 1;
-            if (j == self.model.items.len) j = 0;
-            const p1 = math.vector2Add(math.vector2Transform(self.model.items[i],mat),self.pos);
-            const p2 = math.vector2Add(math.vector2Transform(self.model.items[j],mat),self.pos);
+        for (self.model.items,1..) |raw,nextIndex| {
+            const p1 = math.vector2Add(math.vector2Transform(self.model.items[if (nextIndex == self.model.items.len) 0 else nextIndex], mat), self.pos);
+            const p2 = math.vector2Add(math.vector2Transform(raw, mat), self.pos);
             rl.drawLineEx(p1,p2, 2, rl.Color.white);
         }
     }
@@ -41,14 +39,12 @@ const Object = struct {
 
     pub fn collison(self: @This(),point: rl.Vector2) bool {
         const mat = math.matrixRotateZ(self.rotation);
-
-        var points: []rl.Vector2 = allocator.alloc(rl.Vector2,self.model.items.len) catch unreachable;
-        defer allocator.free(points);
-
-        for (0..self.model.items.len) |i| {
-            points[i] = math.vector2Add(math.vector2Transform(self.model.items[i],mat),self.pos);
+        for (self.model.items,1..) |raw,nextIndex| {
+            const next = math.vector2Add(math.vector2Transform(self.model.items[if (nextIndex == self.model.items.len) 0 else nextIndex], mat), self.pos);
+            const current = math.vector2Add(math.vector2Transform(raw, mat), self.pos);
+            if (rl.checkCollisionPointTriangle(point,current,next,self.pos)) return true;
         }
-        return rl.checkCollisionPointPoly(point,points);
+        return false;
     }
 
     pub fn destroy(self: @This()) void {
@@ -123,29 +119,40 @@ const AsteroidType = enum {
         return switch (self) {
             .LARGE => 2,
             .MEDIUM => 1,
-            .SMALL => 0.3
+            .SMALL => 0.3,
+        };
+    }
+    pub fn degrade(self: @This()) !AsteroidType {
+        return switch (self) {
+            .LARGE => AsteroidType.MEDIUM,
+            .MEDIUM => AsteroidType.SMALL,
+            .SMALL => error.InvalidSize,
         };
     }
 };
 
 const Asteroid = struct {
     sprite: Object,
+    size: AsteroidType,
 
     pub fn spawn(position: rl.Vector2,size: AsteroidType) @This() {
         var points = std.ArrayList(rl.Vector2).init(allocator);
-        const step: f32 = (2 * std.math.pi) / 10.0;
+        const step: f32 = (2 * std.math.pi) / 9.0;
         var current: f32 = 0.0;
         for (0..10) |_| {
             points.append(rl.Vector2.init(std.math.sin(current) * RandToF(30, 50) * size.size(),
             std.math.cos(current) * RandToF(15, 50) * size.size())) catch unreachable;
             current += step;
         }
+        const dir = math.vector2Normalize(rl.Vector2.init(RandToF(-10,10),RandToF(-10,10)));
+        const force = math.vector2Divide(dir, rl.Vector2.init(size.size(), size.size()));
         return .{
             .sprite = .{
                 .model = points,
                 .pos = position,
-                .force = rl.Vector2.init(0, 0)
-            }
+                .force = force
+            },
+            .size = size
         };
     }
 };
@@ -155,7 +162,9 @@ const Game = struct {
     asteroids: std.ArrayList(Asteroid),
     projectiles: std.ArrayList(Projectile),
     radius: f32 = 120,
+    score: usize = 0,
     level: u8 = 1,
+    lives: u8 = 3,
 
     fn next(self: *@This()) void {
         var numOfAsteroids: u8 = self.level * 3;
@@ -224,13 +233,30 @@ fn update(game: *Game) anyerror!void {
         proj.move();
     }
     // collison
-    end: for (game.player.sprite.model.items) |rawPoint| {
-        const mat = math.matrixRotateZ(game.player.sprite.rotation);
-        const point = math.vector2Add(math.vector2Transform(rawPoint,mat),game.player.sprite.pos);
-        for (game.asteroids.items) |a| {
-            if(a.sprite.collison(point)){
-                // collison accoured! betweem player and asteroid
-                break: end;
+    for (game.asteroids.items,0..) |*a,i| {
+        a.sprite.move();
+        // Maybe check all points on player instead of just centre
+        if(a.sprite.collison(game.player.sprite.pos)){
+            // collison accoured! betweem player and asteroid
+            break;
+        }
+        for (game.projectiles.items,0..) |proj,j| {
+            if (a.sprite.collison(proj.pos)){
+                _ = game.projectiles.swapRemove(j);
+                defer _ = game.asteroids.swapRemove(i);
+                game.score += switch (a.size) {
+                    .LARGE => 40,
+                    .MEDIUM => 50,
+                    .SMALL => 100
+                };
+                if (a.size == AsteroidType.SMALL) return;
+                const newType = try a.size.degrade();
+                for (0..3) |_| {
+                    const x = a.sprite.pos.x + RandToF(-20, 20);
+                    const y = a.sprite.pos.y + RandToF(-20, 20);
+                    try game.asteroids.append(Asteroid.spawn(rl.Vector2.init(x, y),newType));
+                }
+                break;
             }
         }
     }
@@ -242,6 +268,23 @@ fn draw(game: *Game) void {
     }
     for (game.asteroids.items) |ast| {
         ast.sprite.draw();
+    }
+    // draw score
+    if (std.fmt.allocPrintZ(allocator, "{}", .{game.score})) |score| {
+        defer allocator.free(score);
+        rl.drawText(score, 10, 10, 24, rl.Color.white);
+    } else |_| {
+        rl.drawText("0", 10, 10, 24, rl.Color.white);
+    }
+    // draw lives
+    const model = game.player.sprite.model.items;
+    for (0..game.lives) |i| {
+        const shift = rl.Vector2.init(@as(f32,@floatFromInt(i)) * 25.0 + 20.0, 60);
+        for (model,1..) |raw,nextIndex| {
+            const p1 = math.vector2Add(model[if (nextIndex == model.len) 0 else nextIndex],shift);
+            const p2 = math.vector2Add(raw,shift);
+            rl.drawLineEx(p1,p2, 2, rl.Color.white);
+        }
     }
 }
 
@@ -273,5 +316,5 @@ pub fn main() anyerror!void {
 }
 
 fn RandToF(min: i32, max: i32) f32 {
-    return @as(f32,@floatFromInt(rand.intRangeLessThan(i32, min, max)));
+    return @as(f32,@floatFromInt(rand.intRangeAtMost(i32, min, max)));
 }
