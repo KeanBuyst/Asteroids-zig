@@ -73,10 +73,22 @@ const Projectile = struct {
     }
 };
 
+const Part = struct {
+    model: [2]rl.Vector2,
+    force: rl.Vector2
+};
+
 const Ship = struct {
     sprite: Object,
     animation: [3]rl.Vector2,
     off: bool = false,
+    // death animation
+    dead: bool = false,
+    parts: [4]Part = undefined,
+    timeOfDeath: i64 = 0,
+    // cool down
+    cooldown: bool = false,
+
 
     pub fn spawn(position: rl.Vector2) !@This() {
         var model = std.ArrayList(rl.Vector2).init(allocator);
@@ -97,8 +109,30 @@ const Ship = struct {
             }
         };
     }
-
+    pub fn draw(self: *@This()) void {
+        if (self.dead){
+            for (self.parts) |part| rl.drawLineEx(part.model[0], part.model[1], 2, rl.Color.white);
+        } else if (self.cooldown) {
+            // immune 3s after respawn
+            const time = std.time.milliTimestamp() - self.timeOfDeath;
+            if (time >= 6000){
+                self.cooldown = false;
+            } else {
+                // cool down animation
+                if (@mod(@divFloor(time,300),2) == 1)
+                    self.sprite.draw();
+            }
+        } else self.sprite.draw();
+    }
+    pub fn move(self: *@This()) void {
+        if (self.dead){
+            for (&self.parts) |*part| {
+                for (part.model,0..) |point,i| part.model[i] = math.vector2Add(point,part.force);
+            }
+        } else self.sprite.move();
+    }
     pub fn animate(self: @This()) void {
+        if (self.dead) return;
         if (self.off) return;
         const mat = math.matrixRotateZ(self.sprite.rotation);
         for (self.animation,1..) |point,i| {
@@ -107,6 +141,21 @@ const Ship = struct {
             rl.drawLineEx(math.vector2Add(math.vector2Transform(point,mat),self.sprite.pos),
             math.vector2Add(math.vector2Transform(self.animation[index], mat),self.sprite.pos), 2, rl.Color.white);
         }
+    }
+    pub fn death(self: *@This()) void {
+        const mat = math.matrixRotateZ(self.sprite.rotation);
+        const speed = 0.5;
+        for (0..4,1..) |s,e| {
+            const dir = math.vector2Multiply(math.vector2Normalize(rl.Vector2.init(RandToF(-10,10),RandToF(-10,10))),rl.Vector2.init(speed, speed));
+            const p2 = math.vector2Add(math.vector2Transform(self.sprite.model.items[if (e == self.sprite.model.items.len) 0 else e], mat), self.sprite.pos);
+            const p1 = math.vector2Add(math.vector2Transform(self.sprite.model.items[s], mat), self.sprite.pos);
+            self.parts[s] = .{
+                .model = [2]rl.Vector2 {p1,p2},
+                .force = dir
+            };
+        }
+        self.dead = true;
+        self.timeOfDeath = std.time.milliTimestamp();
     }
 };
 
@@ -166,6 +215,13 @@ const Game = struct {
     level: u8 = 1,
     lives: u8 = 3,
 
+    pub fn end(self: @This()) void {
+        self.asteroids.deinit();
+        self.projectiles.deinit();
+        rl.closeWindow();
+        std.os.exit(0);
+    }
+
     fn next(self: *@This()) void {
         var numOfAsteroids: u8 = self.level * 3;
         // zone 1 -> 4 asteroids only
@@ -224,7 +280,13 @@ fn update(game: *Game) anyerror!void {
         try game.projectiles.append(proj);
     }
     // game logic
-    game.player.sprite.move();
+    if (game.player.dead and std.time.milliTimestamp() - game.player.timeOfDeath >= 3000){
+        if (game.lives == 1) game.end();
+        game.lives -= 1;
+        game.player.cooldown = true;
+        game.player.dead = false;
+    }
+    game.player.move();
     for (game.projectiles.items,0..) |*proj,i| {
         if (proj.age == proj.lifeTime){
             _ = game.projectiles.swapRemove(i);
@@ -233,17 +295,28 @@ fn update(game: *Game) anyerror!void {
         proj.move();
     }
     // collison
+    const mat = math.matrixRotateZ(game.player.sprite.rotation);
     for (game.asteroids.items,0..) |*a,i| {
         a.sprite.move();
         // Maybe check all points on player instead of just centre
-        if(a.sprite.collison(game.player.sprite.pos)){
-            // collison accoured! betweem player and asteroid
-            break;
+        if(!game.player.dead and !game.player.cooldown){
+            for (game.player.sprite.model.items,0..) |point,j| {
+                if (j == 2) continue;
+                const check = math.vector2Add(math.vector2Transform(point, mat), game.player.sprite.pos);
+                if (a.sprite.collison(check)){
+                    // collison accoured! betweem player and asteroid
+                    game.player.death();
+                    break;
+                }
+            }
         }
         for (game.projectiles.items,0..) |proj,j| {
             if (a.sprite.collison(proj.pos)){
                 _ = game.projectiles.swapRemove(j);
-                defer _ = game.asteroids.swapRemove(i);
+                defer {
+                    a.sprite.destroy();
+                     _ = game.asteroids.swapRemove(i);
+                }
                 game.score += switch (a.size) {
                     .LARGE => 40,
                     .MEDIUM => 50,
@@ -262,7 +335,7 @@ fn update(game: *Game) anyerror!void {
     }
 }
 fn draw(game: *Game) void {
-    game.player.sprite.draw();
+    game.player.draw();
     for (game.projectiles.items) |proj| {
         proj.draw();
     }
