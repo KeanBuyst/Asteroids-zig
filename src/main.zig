@@ -214,6 +214,7 @@ const Game = struct {
     score: usize = 0,
     level: u8 = 1,
     lives: u8 = 3,
+    lastStageTime: i64 = 0,
 
     pub fn end(self: @This()) void {
         self.asteroids.deinit();
@@ -223,6 +224,13 @@ const Game = struct {
     }
 
     fn next(self: *@This()) void {
+        dbg.print("Starting new stage: level {}\n", .{self.level});
+
+        // move player to centre. Reset force
+        self.player.sprite.force = rl.Vector2.init(0, 0);
+        self.player.sprite.pos = rl.Vector2.init(screenWidth / 2, screenHeight / 2);
+
+        self.lastStageTime = std.time.milliTimestamp();
         var numOfAsteroids: u8 = self.level * 3;
         // zone 1 -> 4 asteroids only
         // zone 2 -> 7 asteroids only
@@ -233,6 +241,9 @@ const Game = struct {
             numOfAsteroids = 12;
             dbg.print("Too many asteroids: zones exceeded\nSetting amount to 12", .{});
         }
+        // clear previous if any
+        for (self.asteroids.items) |a| a.sprite.destroy();
+        self.asteroids.clearAndFree();
         // fill zones
         for (1..4) |i| {
             const index: u8 = @as(u8,@intCast(i));
@@ -280,7 +291,13 @@ fn update(game: *Game) anyerror!void {
         try game.projectiles.append(proj);
     }
     // game logic
-    if (game.player.dead and std.time.milliTimestamp() - game.player.timeOfDeath >= 3000){
+    const time = std.time.milliTimestamp();
+
+    if (!game.player.dead and time - game.lastStageTime >= 40_000){
+        game.next();
+    }
+
+    if (game.player.dead and time - game.player.timeOfDeath >= 3000){
         if (game.lives == 1) game.end();
         game.lives -= 1;
         game.player.cooldown = true;
