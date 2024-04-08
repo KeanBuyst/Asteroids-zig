@@ -217,6 +217,17 @@ const Game = struct {
     lastStageTime: i64 = 0,
 
     pub fn end(self: @This()) void {
+        const text = "Game Over";
+        const x = screenWidth / 2 - text.len * 24;
+        const y = screenHeight / 2 - 100;
+        rl.drawText(text,x,y, 64, rl.Color.white);
+        if (std.fmt.allocPrintZ(allocator, "Level: {}\n\nScore: {}", .{self.level - 1,self.score})) |score| {
+            rl.drawText(score, x, y + 100, 32, rl.Color.white);
+        } else |_| {
+            rl.drawText("Score exceeded allocated memory amount\n\nDamn lol", x, y + 100,32, rl.Color.white);
+        }
+        rl.endDrawing();
+        rl.waitTime(10);
         self.asteroids.deinit();
         self.projectiles.deinit();
         rl.closeWindow();
@@ -241,9 +252,6 @@ const Game = struct {
             numOfAsteroids = 12;
             dbg.print("Too many asteroids: zones exceeded\nSetting amount to 12", .{});
         }
-        // clear previous if any
-        for (self.asteroids.items) |a| a.sprite.destroy();
-        self.asteroids.clearAndFree();
         // fill zones
         for (1..4) |i| {
             const index: u8 = @as(u8,@intCast(i));
@@ -293,7 +301,7 @@ fn update(game: *Game) anyerror!void {
     // game logic
     const time = std.time.milliTimestamp();
 
-    if (!game.player.dead and time - game.lastStageTime >= 40_000){
+    if (game.asteroids.items.len == 0){
         game.next();
     }
 
@@ -394,13 +402,10 @@ pub fn main() anyerror!void {
     game.next();
 
     while (!rl.windowShouldClose()) {
-        // update
-        update(&game) catch unreachable;
-
         rl.beginDrawing();
         defer rl.endDrawing();
         rl.clearBackground(rl.Color.black);
-
+        update(&game) catch unreachable;
         draw(&game);
     }
 }
