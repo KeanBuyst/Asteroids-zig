@@ -1,5 +1,5 @@
 const rl = @import("raylib");
-const math = @import("raylib-math");
+const math = rl.math;
 const std = @import("std");
 const dbg = std.debug;
 const rand = std.crypto.random;
@@ -16,12 +16,13 @@ const Object = struct {
 
     pub fn draw(self: @This()) void {
         const mat = math.matrixRotateZ(self.rotation);
-        for (self.model.items,1..) |raw,nextIndex| {
+        for (self.model.items, 1..) |raw, nextIndex| {
             const p1 = math.vector2Add(math.vector2Transform(self.model.items[if (nextIndex == self.model.items.len) 0 else nextIndex], mat), self.pos);
             const p2 = math.vector2Add(math.vector2Transform(raw, mat), self.pos);
-            rl.drawLineEx(p1,p2, 2, rl.Color.white);
+            rl.drawLineEx(p1, p2, 2, rl.Color.white);
         }
     }
+
     pub fn move(self: *@This()) void {
         var x = self.pos.x + self.force.x;
         var y = self.pos.y + self.force.y;
@@ -31,18 +32,19 @@ const Object = struct {
         if (screenWidth < x) x -= screenWidth;
         self.pos = rl.Vector2.init(x, y);
     }
+
     pub fn getDirection(self: @This()) rl.Vector2 {
         const x = @sin(self.rotation);
         const y = @cos(self.rotation);
         return math.vector2Normalize(rl.Vector2.init(x, -y));
     }
 
-    pub fn collison(self: @This(),point: rl.Vector2) bool {
+    pub fn collison(self: @This(), point: rl.Vector2) bool {
         const mat = math.matrixRotateZ(self.rotation);
-        for (self.model.items,1..) |raw,nextIndex| {
+        for (self.model.items, 1..) |raw, nextIndex| {
             const next = math.vector2Add(math.vector2Transform(self.model.items[if (nextIndex == self.model.items.len) 0 else nextIndex], mat), self.pos);
             const current = math.vector2Add(math.vector2Transform(raw, mat), self.pos);
-            if (rl.checkCollisionPointTriangle(point,current,next,self.pos)) return true;
+            if (rl.checkCollisionPointTriangle(point, current, next, self.pos)) return true;
         }
         return false;
     }
@@ -59,7 +61,7 @@ const Projectile = struct {
     age: u32 = 0,
 
     pub fn draw(self: @This()) void {
-        rl.drawCircleV(self.pos,2,rl.Color.white);
+        rl.drawCircleV(self.pos, 2, rl.Color.white);
     }
     pub fn move(self: *@This()) void {
         var x = self.pos.x + self.direction.x;
@@ -73,10 +75,7 @@ const Projectile = struct {
     }
 };
 
-const Part = struct {
-    model: [2]rl.Vector2,
-    force: rl.Vector2
-};
+const Part = struct { model: [2]rl.Vector2, force: rl.Vector2 };
 
 const Ship = struct {
     sprite: Object,
@@ -89,45 +88,33 @@ const Ship = struct {
     // cool down
     cooldown: bool = false,
 
-
     pub fn spawn(position: rl.Vector2) !@This() {
         var model = std.ArrayList(rl.Vector2).init(allocator);
-        try model.append(rl.Vector2.init(0,-20));
+        try model.append(rl.Vector2.init(0, -20));
         try model.append(rl.Vector2.init(-10, 10));
         try model.append(rl.Vector2.init(0, 5));
-        try model.append(rl.Vector2.init(10,10));
-        return .{
-            .sprite = .{
-                .model = model,
-                .pos = position,
-                .force = rl.Vector2.init(0, 0)
-            },
-            .animation = [_]rl.Vector2 {
-                rl.Vector2.init(-5,2.5),
-                rl.Vector2.init(0, 15),
-                rl.Vector2.init(5,2.5)
-            }
-        };
+        try model.append(rl.Vector2.init(10, 10));
+        return .{ .sprite = .{ .model = model, .pos = position, .force = rl.Vector2.init(0, 0) }, .animation = [_]rl.Vector2{ rl.Vector2.init(-5, 2.5), rl.Vector2.init(0, 15), rl.Vector2.init(5, 2.5) } };
     }
     pub fn draw(self: *@This()) void {
-        if (self.dead){
+        if (self.dead) {
             for (self.parts) |part| rl.drawLineEx(part.model[0], part.model[1], 2, rl.Color.white);
         } else if (self.cooldown) {
             // immune 3s after respawn
             const time = std.time.milliTimestamp() - self.timeOfDeath;
-            if (time >= 6000){
+            if (time >= 6000) {
                 self.cooldown = false;
             } else {
                 // cool down animation
-                if (@mod(@divFloor(time,300),2) == 1)
+                if (@mod(@divFloor(time, 300), 2) == 1)
                     self.sprite.draw();
             }
         } else self.sprite.draw();
     }
     pub fn move(self: *@This()) void {
-        if (self.dead){
+        if (self.dead) {
             for (&self.parts) |*part| {
-                for (part.model,0..) |point,i| part.model[i] = math.vector2Add(point,part.force);
+                for (part.model, 0..) |point, i| part.model[i] = math.vector2Add(point, part.force);
             }
         } else self.sprite.move();
     }
@@ -135,24 +122,20 @@ const Ship = struct {
         if (self.dead) return;
         if (self.off) return;
         const mat = math.matrixRotateZ(self.sprite.rotation);
-        for (self.animation,1..) |point,i| {
+        for (self.animation, 1..) |point, i| {
             var index = i;
             if (index == self.animation.len) index = 0;
-            rl.drawLineEx(math.vector2Add(math.vector2Transform(point,mat),self.sprite.pos),
-            math.vector2Add(math.vector2Transform(self.animation[index], mat),self.sprite.pos), 2, rl.Color.white);
+            rl.drawLineEx(math.vector2Add(math.vector2Transform(point, mat), self.sprite.pos), math.vector2Add(math.vector2Transform(self.animation[index], mat), self.sprite.pos), 2, rl.Color.white);
         }
     }
     pub fn death(self: *@This()) void {
         const mat = math.matrixRotateZ(self.sprite.rotation);
         const speed = 0.5;
-        for (0..4,1..) |s,e| {
-            const dir = math.vector2Multiply(math.vector2Normalize(rl.Vector2.init(RandToF(-10,10),RandToF(-10,10))),rl.Vector2.init(speed, speed));
+        for (0..4, 1..) |s, e| {
+            const dir = math.vector2Multiply(math.vector2Normalize(rl.Vector2.init(RandToF(-10, 10), RandToF(-10, 10))), rl.Vector2.init(speed, speed));
             const p2 = math.vector2Add(math.vector2Transform(self.sprite.model.items[if (e == self.sprite.model.items.len) 0 else e], mat), self.sprite.pos);
             const p1 = math.vector2Add(math.vector2Transform(self.sprite.model.items[s], mat), self.sprite.pos);
-            self.parts[s] = .{
-                .model = [2]rl.Vector2 {p1,p2},
-                .force = dir
-            };
+            self.parts[s] = .{ .model = [2]rl.Vector2{ p1, p2 }, .force = dir };
         }
         self.dead = true;
         self.timeOfDeath = std.time.milliTimestamp();
@@ -184,25 +167,17 @@ const Asteroid = struct {
     sprite: Object,
     size: AsteroidType,
 
-    pub fn spawn(position: rl.Vector2,size: AsteroidType) @This() {
+    pub fn spawn(position: rl.Vector2, size: AsteroidType) @This() {
         var points = std.ArrayList(rl.Vector2).init(allocator);
         const step: f32 = (2 * std.math.pi) / 9.0;
         var current: f32 = 0.0;
         for (0..10) |_| {
-            points.append(rl.Vector2.init(std.math.sin(current) * RandToF(30, 50) * size.size(),
-            std.math.cos(current) * RandToF(15, 50) * size.size())) catch unreachable;
+            points.append(rl.Vector2.init(std.math.sin(current) * RandToF(30, 50) * size.size(), std.math.cos(current) * RandToF(15, 50) * size.size())) catch unreachable;
             current += step;
         }
-        const dir = math.vector2Normalize(rl.Vector2.init(RandToF(-10,10),RandToF(-10,10)));
+        const dir = math.vector2Normalize(rl.Vector2.init(RandToF(-10, 10), RandToF(-10, 10)));
         const force = math.vector2Divide(dir, rl.Vector2.init(size.size(), size.size()));
-        return .{
-            .sprite = .{
-                .model = points,
-                .pos = position,
-                .force = force
-            },
-            .size = size
-        };
+        return .{ .sprite = .{ .model = points, .pos = position, .force = force }, .size = size };
     }
 };
 
@@ -220,18 +195,18 @@ const Game = struct {
         const text = "Game Over";
         const x = screenWidth / 2 - text.len * 24;
         const y = screenHeight / 2 - 100;
-        rl.drawText(text,x,y, 64, rl.Color.white);
-        if (std.fmt.allocPrintZ(allocator, "Level: {}\n\nScore: {}", .{self.level - 1,self.score})) |score| {
+        rl.drawText(text, x, y, 64, rl.Color.white);
+        if (std.fmt.allocPrintZ(allocator, "Level: {}\n\nScore: {}", .{ self.level - 1, self.score })) |score| {
             rl.drawText(score, x, y + 100, 32, rl.Color.white);
         } else |_| {
-            rl.drawText("Score exceeded allocated memory amount\n\nDamn lol", x, y + 100,32, rl.Color.white);
+            rl.drawText("Score exceeded allocated memory amount\n\nDamn lol", x, y + 100, 32, rl.Color.white);
         }
         rl.endDrawing();
         rl.waitTime(10);
         self.asteroids.deinit();
         self.projectiles.deinit();
         rl.closeWindow();
-        std.os.exit(0);
+        std.process.exit(0);
     }
 
     fn next(self: *@This()) void {
@@ -248,25 +223,25 @@ const Game = struct {
         // zone n -> n^2 + 3 asteroids only
 
         // no zones past zone 3
-        if (numOfAsteroids > 12){
+        if (numOfAsteroids > 12) {
             numOfAsteroids = 12;
             dbg.print("Too many asteroids: zones exceeded\nSetting amount to 12", .{});
         }
         // fill zones
         for (1..4) |i| {
-            const index: u8 = @as(u8,@intCast(i));
+            const index: u8 = @as(u8, @intCast(i));
             if (numOfAsteroids == 0) break;
-            const amount: u8 = index*index + 3;
+            const amount: u8 = index * index + 3;
             var zone: u8 = 0;
-            if (index == 3){ // last level
+            if (index == 3) { // last level
                 zone = numOfAsteroids;
-            } else zone = rand.intRangeAtMost(u8, self.level,if (amount > numOfAsteroids) numOfAsteroids else amount);
+            } else zone = rand.intRangeAtMost(u8, self.level, if (amount > numOfAsteroids) numOfAsteroids else amount);
             // put asteroids at zone positions
             for (0..zone) |_| {
-                const point: f32 = @as(f32,@floatFromInt(rand.intRangeAtMost(u32, 0,@as(u32,@intFromFloat((2 * std.math.pi) * 100000))))) / 100000;
-                const x = @sin(point) * self.radius * @as(f32,@floatFromInt(index)) + @as(f32,@floatFromInt(screenWidth/2));
-                const y = @cos(point) * self.radius * @as(f32,@floatFromInt(index)) + @as(f32,@floatFromInt(screenHeight/2));
-                self.asteroids.append(Asteroid.spawn(rl.Vector2.init(x,y),rand.enumValue(AsteroidType))) catch unreachable;
+                const point: f32 = @as(f32, @floatFromInt(rand.intRangeAtMost(u32, 0, @as(u32, @intFromFloat((2 * std.math.pi) * 100000))))) / 100000;
+                const x = @sin(point) * self.radius * @as(f32, @floatFromInt(index)) + @as(f32, @floatFromInt(screenWidth / 2));
+                const y = @cos(point) * self.radius * @as(f32, @floatFromInt(index)) + @as(f32, @floatFromInt(screenHeight / 2));
+                self.asteroids.append(Asteroid.spawn(rl.Vector2.init(x, y), rand.enumValue(AsteroidType))) catch unreachable;
             }
 
             numOfAsteroids -= zone;
@@ -278,42 +253,42 @@ const Game = struct {
 
 fn update(game: *Game) anyerror!void {
     // key input stuff
-    if (rl.isKeyDown(rl.KeyboardKey.key_a)){
+    if (rl.isKeyDown(rl.KeyboardKey.key_a)) {
         game.player.sprite.rotation -= 0.1;
-    } else if (rl.isKeyDown(rl.KeyboardKey.key_d)){
+    } else if (rl.isKeyDown(rl.KeyboardKey.key_d)) {
         game.player.sprite.rotation += 0.1;
     }
-    if (rl.isKeyDown(rl.KeyboardKey.key_w)){
+    if (rl.isKeyDown(rl.KeyboardKey.key_w)) {
         game.player.off = !game.player.off;
-        game.player.sprite.force = math.vector2Scale(game.player.sprite.getDirection(),5);
+        game.player.sprite.force = math.vector2Scale(game.player.sprite.getDirection(), 5);
         game.player.animate();
     } else {
         // drag
         game.player.sprite.force = math.vector2Scale(game.player.sprite.force, 0.98);
     }
-    if (rl.isKeyPressed(rl.KeyboardKey.key_space)){
-        var proj = Projectile {
+    if (rl.isKeyPressed(rl.KeyboardKey.key_space)) {
+        const proj = Projectile{
             .pos = game.player.sprite.pos,
-            .direction = math.vector2Scale(game.player.sprite.getDirection(),10),
+            .direction = math.vector2Scale(game.player.sprite.getDirection(), 10),
         };
         try game.projectiles.append(proj);
     }
     // game logic
     const time = std.time.milliTimestamp();
 
-    if (game.asteroids.items.len == 0){
+    if (game.asteroids.items.len == 0) {
         game.next();
     }
 
-    if (game.player.dead and time - game.player.timeOfDeath >= 3000){
+    if (game.player.dead and time - game.player.timeOfDeath >= 3000) {
         if (game.lives == 1) game.end();
         game.lives -= 1;
         game.player.cooldown = true;
         game.player.dead = false;
     }
     game.player.move();
-    for (game.projectiles.items,0..) |*proj,i| {
-        if (proj.age == proj.lifeTime){
+    for (game.projectiles.items, 0..) |*proj, i| {
+        if (proj.age == proj.lifeTime) {
             _ = game.projectiles.swapRemove(i);
             continue;
         }
@@ -321,38 +296,38 @@ fn update(game: *Game) anyerror!void {
     }
     // collison
     const mat = math.matrixRotateZ(game.player.sprite.rotation);
-    for (game.asteroids.items,0..) |*a,i| {
+    for (game.asteroids.items, 0..) |*a, i| {
         a.sprite.move();
         // Maybe check all points on player instead of just centre
-        if(!game.player.dead and !game.player.cooldown){
-            for (game.player.sprite.model.items,0..) |point,j| {
+        if (!game.player.dead and !game.player.cooldown) {
+            for (game.player.sprite.model.items, 0..) |point, j| {
                 if (j == 2) continue;
                 const check = math.vector2Add(math.vector2Transform(point, mat), game.player.sprite.pos);
-                if (a.sprite.collison(check)){
+                if (a.sprite.collison(check)) {
                     // collison accoured! betweem player and asteroid
                     game.player.death();
                     break;
                 }
             }
         }
-        for (game.projectiles.items,0..) |proj,j| {
-            if (a.sprite.collison(proj.pos)){
+        for (game.projectiles.items, 0..) |proj, j| {
+            if (a.sprite.collison(proj.pos)) {
                 _ = game.projectiles.swapRemove(j);
                 defer {
                     a.sprite.destroy();
-                     _ = game.asteroids.swapRemove(i);
+                    _ = game.asteroids.swapRemove(i);
                 }
                 game.score += switch (a.size) {
                     .LARGE => 40,
                     .MEDIUM => 50,
-                    .SMALL => 100
+                    .SMALL => 100,
                 };
                 if (a.size == AsteroidType.SMALL) return;
                 const newType = try a.size.degrade();
                 for (0..3) |_| {
                     const x = a.sprite.pos.x + RandToF(-20, 20);
                     const y = a.sprite.pos.y + RandToF(-20, 20);
-                    try game.asteroids.append(Asteroid.spawn(rl.Vector2.init(x, y),newType));
+                    try game.asteroids.append(Asteroid.spawn(rl.Vector2.init(x, y), newType));
                 }
                 break;
             }
@@ -377,11 +352,11 @@ fn draw(game: *Game) void {
     // draw lives
     const model = game.player.sprite.model.items;
     for (0..game.lives) |i| {
-        const shift = rl.Vector2.init(@as(f32,@floatFromInt(i)) * 25.0 + 20.0, 60);
-        for (model,1..) |raw,nextIndex| {
-            const p1 = math.vector2Add(model[if (nextIndex == model.len) 0 else nextIndex],shift);
-            const p2 = math.vector2Add(raw,shift);
-            rl.drawLineEx(p1,p2, 2, rl.Color.white);
+        const shift = rl.Vector2.init(@as(f32, @floatFromInt(i)) * 25.0 + 20.0, 60);
+        for (model, 1..) |raw, nextIndex| {
+            const p1 = math.vector2Add(model[if (nextIndex == model.len) 0 else nextIndex], shift);
+            const p2 = math.vector2Add(raw, shift);
+            rl.drawLineEx(p1, p2, 2, rl.Color.white);
         }
     }
 }
@@ -391,11 +366,7 @@ pub fn main() anyerror!void {
     defer rl.closeWindow();
     rl.setTargetFPS(60);
 
-    var game = Game {
-        .player = try Ship.spawn(rl.Vector2.init(screenWidth / 2,screenHeight / 2)),
-        .asteroids = std.ArrayList(Asteroid).init(allocator),
-        .projectiles = std.ArrayList(Projectile).init(allocator)
-    };
+    var game = Game{ .player = try Ship.spawn(rl.Vector2.init(screenWidth / 2, screenHeight / 2)), .asteroids = std.ArrayList(Asteroid).init(allocator), .projectiles = std.ArrayList(Projectile).init(allocator) };
     defer game.asteroids.deinit();
     defer game.projectiles.deinit();
 
@@ -411,5 +382,5 @@ pub fn main() anyerror!void {
 }
 
 fn RandToF(min: i32, max: i32) f32 {
-    return @as(f32,@floatFromInt(rand.intRangeAtMost(i32, min, max)));
+    return @as(f32, @floatFromInt(rand.intRangeAtMost(i32, min, max)));
 }
